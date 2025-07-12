@@ -1,120 +1,185 @@
-# Remote MCP Server on Cloudflare
+# VoIPmonitor MCP Server
 
-Let's get a remote MCP server up-and-running on Cloudflare Workers complete with OAuth login!
+A Model Context Protocol (MCP) server that provides AI assistants with the ability to search and analyze VoIP call records from VoIPmonitor. Perfect for support teams who need to quickly investigate call quality issues, disconnections, and troubleshoot VoIP problems.
 
-## Develop locally
+## Features
 
+This MCP server provides four main tools for support agents:
+
+### 🔍 `search_calls`
+Search for calls by various criteria:
+- Time ranges (date/time)
+- Caller/called phone numbers  
+- SIP Call-ID
+- Connected vs all calls
+- Configurable result limits
+
+### 📋 `get_call_details`
+Get comprehensive information about a specific call:
+- Basic call information (duration, parties, timestamps)
+- Call quality metrics (MOS, packet loss, jitter)
+- SIP message history and call flow
+- Response codes and status
+
+### 📦 `get_pcap_info`
+Get packet capture information for network analysis:
+- Direct PCAP download links
+- Option to include/exclude RTP data
+- Ready for Wireshark analysis
+
+### 🚨 `search_problem_calls`
+Pre-built searches for common support scenarios:
+- **Disconnections**: Calls that ended unexpectedly
+- **Quality Issues**: Poor MOS scores, high packet loss
+- **Failed Calls**: SIP 4xx/5xx error responses
+
+## Quick Setup
+
+### 1. Configure VoIPmonitor Credentials
+
+Create a service account in VoIPmonitor with read-only access to CDR data, then set these environment variables:
+
+For local development, copy `.env.example` to `.env`:
 ```bash
-# clone the repository
-git clone https://github.com/cloudflare/ai.git
-# Or if using ssh:
-# git clone git@github.com:cloudflare/ai.git
-
-# install dependencies
-cd ai
-# Note: using pnpm instead of just "npm"
-pnpm install
-
-# run locally
-npx nx dev remote-mcp-server
+VOIPMONITOR_URL=https://your-voipmonitor-server.com
+VOIPMONITOR_USER=api-service  
+VOIPMONITOR_PASSWORD=your-password
 ```
 
-You should be able to open [`http://localhost:8787/`](http://localhost:8787/) in your browser
+For production, set as Cloudflare Worker secrets:
+```bash
+npx wrangler secret put VOIPMONITOR_URL
+npx wrangler secret put VOIPMONITOR_USER
+npx wrangler secret put VOIPMONITOR_PASSWORD
+```
 
-## Connect the MCP inspector to your server
+### 2. Deploy to Cloudflare
 
-To explore your new MCP api, you can use the [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector).
+```bash
+# Install dependencies
+npm install
 
-- Start it with `npx @modelcontextprotocol/inspector`
-- [Within the inspector](http://localhost:5173), switch the Transport Type to `SSE` and enter `http://localhost:8787/sse` as the URL of the MCP server to connect to, and click "Connect"
-- You will navigate to a (mock) user/password login screen. Input any email and pass to login.
-- You should be redirected back to the MCP Inspector and you can now list and call any defined tools!
+# Deploy to Cloudflare Workers
+npm run deploy
+```
 
-<div align="center">
-  <img src="img/mcp-inspector-sse-config.png" alt="MCP Inspector with the above config" width="600"/>
-</div>
+### 3. Connect to Claude Desktop
 
-<div align="center">
-  <img src="img/mcp-inspector-successful-tool-call.png" alt="MCP Inspector with after a tool call" width="600"/>
-</div>
-
-## Connect Claude Desktop to your local MCP server
-
-The MCP inspector is great, but we really want to connect this to Claude! Follow [Anthropic's Quickstart](https://modelcontextprotocol.io/quickstart/user) and within Claude Desktop go to Settings > Developer > Edit Config to find your configuration file.
-
-Open the file in your text editor and replace it with this configuration:
+Add to your Claude Desktop configuration file:
 
 ```json
 {
   "mcpServers": {
-    "math": {
+    "voipmonitor": {
       "command": "npx",
       "args": [
         "mcp-remote",
-        "http://localhost:8787/sse"
+        "https://your-worker.your-subdomain.workers.dev/sse"
       ]
     }
   }
 }
 ```
 
-This will run a local proxy and let Claude talk to your MCP server over HTTP
+## Usage Examples
 
-When you open Claude a browser window should open and allow you to login. You should see the tools available in the bottom right. Given the right prompt Claude should ask to call the tool.
+Once connected, you can ask Claude natural language questions like:
 
-<div align="center">
-  <img src="img/available-tools.png" alt="Clicking on the hammer icon shows a list of available tools" width="600"/>
-</div>
+### Call Investigation
+- *"Find all calls from 555-1234 yesterday"*
+- *"Show me calls that lasted more than 10 minutes today"*
+- *"Get details for call ID abc-123-def"*
 
-<div align="center">
-  <img src="img/claude-does-math-the-fancy-way.png" alt="Claude answers the prompt 'I seem to have lost my calculator and have run out of fingers. Could you use the math tool to add 23 and 19?' by invoking the MCP add tool" width="600"/>
-</div>
+### Quality Troubleshooting  
+- *"Find calls with poor quality in the last 2 hours"*
+- *"Show me all disconnected calls today"*
+- *"Search for failed calls this morning"*
 
-## Deploy to Cloudflare
+### Network Analysis
+- *"Get the PCAP file for call 12345 for network analysis"*
+- *"I need the packet capture for troubleshooting this call quality issue"*
 
-1. `npx wrangler kv namespace create OAUTH_KV`
-2. Follow the guidance to add the kv namespace ID to `wrangler.jsonc`
-3. `npm run deploy`
+## Development
 
-## Call your newly deployed remote MCP server from a remote MCP client
-
-Just like you did above in "Develop locally", run the MCP inspector:
-
-`npx @modelcontextprotocol/inspector@latest`
-
-Then enter the `workers.dev` URL (ex: `worker-name.account-name.workers.dev/sse`) of your Worker in the inspector as the URL of the MCP server to connect to, and click "Connect".
-
-You've now connected to your MCP server from a remote MCP client.
-
-## Connect Claude Desktop to your remote MCP server
-
-Update the Claude configuration file to point to your `workers.dev` URL (ex: `worker-name.account-name.workers.dev/sse`) and restart Claude 
-
-```json
-{
-  "mcpServers": {
-    "math": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://worker-name.account-name.workers.dev/sse"
-      ]
-    }
-  }
-}
-```
-
-## Debugging
-
-Should anything go wrong it can be helpful to restart Claude, or to try connecting directly to your
-MCP server on the command line with the following command.
-
+### Local Development
 ```bash
-npx mcp-remote http://localhost:8787/sse
+# Start local development server
+npm run dev
+
+# Test with MCP Inspector
+npx @modelcontextprotocol/inspector
+# Connect to: http://localhost:8787/sse
 ```
 
-In some rare cases it may help to clear the files added to `~/.mcp-auth`
+### Authentication Flow
+The MCP server automatically handles VoIPmonitor authentication:
+1. Uses username/password to get session token
+2. Maintains session for subsequent API calls  
+3. Re-authenticates if session expires
 
-```bash
-rm -rf ~/.mcp-auth
-```
+### Error Handling
+- Clear error messages for missing credentials
+- Graceful handling of VoIPmonitor API errors
+- Fallback behavior when optional data (like SIP history) isn't available
+
+## API Tools Reference
+
+### search_calls
+**Parameters:**
+- `startTime` (required): Start time in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format
+- `endTime` (optional): End time in same format
+- `caller` (optional): Caller phone number
+- `called` (optional): Called phone number  
+- `callId` (optional): SIP Call-ID header value
+- `onlyConnected` (optional): Return only connected calls (default: false)
+- `limit` (optional): Maximum results (default: 50)
+
+### get_call_details
+**Parameters:**
+- `cdrId` (required): CDR ID of the call
+
+### get_pcap_info  
+**Parameters:**
+- `cdrId` (required): CDR ID of the call
+- `includeRtp` (optional): Include RTP data (default: true)
+
+### search_problem_calls
+**Parameters:**
+- `issueType` (required): "disconnections", "quality", or "failed_calls"
+- `timeRange` (required): "1h", "2h", "today", or specific date
+- `limit` (optional): Maximum results (default: 20)
+
+## Security Notes
+
+- Uses read-only service account for VoIPmonitor access
+- All credentials stored as encrypted Cloudflare Worker secrets
+- Session tokens are temporary and automatically renewed
+- No sensitive call data is cached or logged
+
+## Troubleshooting
+
+### Connection Issues
+1. Verify VoIPmonitor URL is accessible from Cloudflare Workers
+2. Check service account credentials are correct
+3. Ensure VoIPmonitor API is enabled and accessible
+
+### Authentication Errors
+1. Verify service account has CDR read permissions
+2. Check username/password are correctly set as secrets
+3. Test credentials manually with VoIPmonitor API
+
+### No Results Found
+1. Check date/time formats are correct
+2. Verify time ranges contain actual call data
+3. Ensure search criteria match existing calls
+
+## Support
+
+For issues with:
+- **MCP Server**: Check Cloudflare Worker logs via `wrangler tail`
+- **VoIPmonitor Integration**: Verify API access and credentials
+- **Claude Connection**: Restart Claude Desktop and check configuration
+
+## License
+
+This project is licensed under the Apache 2.0 License.
